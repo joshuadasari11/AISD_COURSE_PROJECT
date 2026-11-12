@@ -40,7 +40,7 @@ Follow these steps to clone and run the project locally on your machine:
 
 1. Clone the Repository
 
-git clone https://github.com/neilmas04/map_project.git
+git clone https://github.com/joshuadasari11/map_project.git
 cd map_project
 
 
