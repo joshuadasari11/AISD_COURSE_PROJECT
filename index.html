@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ResilienceRoute 3D - KLE Tech Campus</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+    <script src="https://cdn.osmbuildings.org/classic/0.2.2b/OSMBuildings-Leaflet.js"></script>
+
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #e2e8f0; overflow: hidden; }
+        #map { height: 100vh; width: 100vw; z-index: 1; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.05); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 10px; }
+        
+        .glass-panel {
+            position: absolute;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            color: #334155;
+            padding: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        #custom-routing-panel { top: 15px; left: 15px; width: 250px; }
+        #building-details-panel { bottom: 20px; left: 15px; width: 280px; display: none; }
+        
+        h3 { margin-top: 0; margin-bottom: 10px; color: #1d4ed8; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        
+        select, button {
+            width: 100%;
+            padding: 8px;
+            margin-top: 4px;
+            margin-bottom: 12px;
+            border-radius: 6px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #0f172a;
+            font-size: 12px;
+            outline: none;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: white;
+            border: none;
+            font-weight: bold;
+            font-size: 11px;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-bottom: 0;
+        }
+        
+        button:hover { box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); transform: translateY(-1px); }
+
+        .map-label {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: #1e293b;
+            font-size: 10.5px;
+            font-weight: 800;
+            text-shadow: -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff;
+            text-align: center;
+        }
+
+        .leaflet-routing-container {
+            background: rgba(255, 255, 255, 0.95) !important;
+            backdrop-filter: blur(12px) !important;
+            color: #334155 !important;
+            border: 1px solid rgba(0, 0, 0, 0.1) !important;
+            border-radius: 10px !important;
+            width: 260px !important;
+            max-height: 45vh !important;
+            overflow-y: auto !important;
+            top: 15px !important;
+            right: 15px !important;
+            margin: 0 !important;
+            padding: 12px !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08) !important;
+        }
+        
+        .leaflet-routing-alt h2 { color: #1d4ed8 !important; font-size: 13px !important; margin-bottom: 5px !important; }
+        .leaflet-routing-alt h3 { font-size: 11px !important; color: #64748b !important; }
+        .leaflet-routing-alt table { font-size: 11px !important; }
+        .leaflet-routing-geocoders { display: none !important; }
+        .osmb-viewport canvas { pointer-events: none !important; }
+        
+        @keyframes pulse-ring {
+            0% { transform: scale(0.5); opacity: 1; }
+            100% { transform: scale(3); opacity: 0; }
+        }
+        .blinking-pointer { position: relative; display: flex; justify-content: center; align-items: center; }
+        .blinking-pointer::before { content: ''; position: absolute; width: 14px; height: 14px; background-color: #ef4444; border-radius: 50%; z-index: 2; }
+        .blinking-pointer::after { content: ''; position: absolute; width: 14px; height: 14px; background-color: #ef4444; border-radius: 50%; animation: pulse-ring 1.5s infinite cubic-bezier(0.215, 0.61, 0.355, 1); z-index: 1; }
+    </style>
+</head>
+<body>
+    
+    <div id="custom-routing-panel" class="glass-panel">
+        <h3>ResilienceRoute 3D</h3>
+        <label>Source Node</label>
+        <select id="sourceSelect"><option value="">-- Select Source --</option></select>
+        
+        <label>Destination Node</label>
+        <select id="destSelect"><option value="">-- Select Destination --</option></select>
+        
+        <button onclick="calculateRoute()">Initialize Path</button>
+    </div>
+
+    <div id="building-details-panel" class="glass-panel">
+        <div id="building-details-content"></div>
+        <button onclick="closeDetails()" style="background: #e2e8f0; color: #334155; margin-top: 10px;">Close Panel</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        // --- REAL KLE TECH DIGITAL TWIN DATA ---
+        // Extensively expanded to cover academic, administrative, residential, and sports facilities
+        const kleData = {
+            "C-LITE": { type: "academic", height: 18, dept: "Computer Science & Engineering", students: 1180, faculty: 62, hod: "Dr. Meenakshi Kulkarni", labs: ["Algorithms Lab", "Cloud & DevOps Lab", "Cyber Security Lab", "Project Studio"] },
+            "Main Building": { type: "academic", height: 15, dept: "Data Science & AI", students: 420, faculty: 24, hod: "Dr. Anand Deshpande", labs: ["GPU Compute Lab", "Applied ML Lab", "Visual Analytics Studio"] },
+            "ECE-EEE Block": { type: "academic", height: 15, dept: "ECE & EEE", students: 1400, faculty: 82, hod: "Dr. Suresh Hebbar / Dr. Rajashekar Patil", labs: ["VLSI Design Lab", "Smart Grid Lab", "Embedded Systems Lab"] },
+            "School of Mechanical Engineering": { type: "academic", height: 15, dept: "Mechanical & Automation", students: 1030, faculty: 63, hod: "Dr. Vinayak Joshi / Dr. Kavita Rao", labs: ["Thermal Lab", "Robotics Lab", "CNC & Manufacturing Lab", "Mechatronics Lab"] },
+            "School of Civil Engineering": { type: "academic", height: 12, dept: "Civil Engineering", students: 480, faculty: 30, hod: "Dr. Shridhar Kulkarni", labs: ["Structures Lab", "Geotechnical Lab", "Transportation Lab"] },
+            "Department of Biotechnology": { type: "academic", height: 12, dept: "Biotech & Chemical Eng", students: 450, faculty: 30, hod: "Dr. Asha Mirji / Dr. Prakash Naik", labs: ["Bioprocess Lab", "Unit Operations Lab", "Molecular Biology Lab"] },
+            "School of Architecture": { type: "academic", height: 12, dept: "Architecture", students: 300, faculty: 20, hod: "Dr. T.V. Kiran Kumar", labs: ["Design Studio", "Model Making Lab", "CAD Lab"] },
+            "Admin Block": { type: "facility", height: 10, desc: "Administrative offices, admission cell, fee collection, and the Vice Chancellor's office.", hours: "09:00 - 17:00" },
+            "Central Library": { type: "facility", height: 12, desc: "Main university library featuring digital catalogs, extensive reading rooms, and reference sections.", hours: "08:00 - 22:00" },
+            "BVB Junior Boys Hostel": { type: "hostel", height: 12, desc: "Accommodation for junior year male students with attached mess and laundry facilities.", hours: "24 Hours (Curfew 21:00)" },
+            "KLE Girls Hostel": { type: "hostel", height: 15, desc: "Secure accommodation for female students featuring integrated dining and recreation rooms.", hours: "24 Hours (Curfew 20:30)" },
+            "KLE Tech Canteen": { type: "facility", height: 6, desc: "Main campus food court with South Indian, North Indian, Chinese counters and a juice bar.", hours: "07:30 - 21:00" },
+            "Gymnasium": { type: "facility", height: 8, desc: "Strength and cardio floor with certified instructors.", hours: "06:00 - 21:00" },
+            "Campus Health Centre": { type: "facility", height: 5, desc: "Resident medical officer, first aid, and campus ambulance on call.", hours: "08:00 - 20:00" },
+            "Print & Repro Centre": { type: "facility", height: 5, desc: "Colour printing, plotting and binding next to the central library.", hours: "09:00 - 20:00" },
+            "Indoor Sports Arena": { type: "facility", height: 10, desc: "Indoor badminton, table tennis, and basketball courts.", hours: "06:00 - 20:00" },
+            "KLE Tech Ground": { type: "facility", height: 0.1, desc: "Cricket and football ground with an athletics track and floodlights.", hours: "06:00 - 19:00" }
+        };
+
+        const campusBounds = L.latLngBounds([15.3620, 75.1160], [15.3750, 75.1270]);
+
+        const map = L.map('map', {
+            maxBounds: campusBounds,
+            maxBoundsViscosity: 1.0, 
+            minZoom: 16 
+        }).setView([15.3689, 75.1214], 17);
+
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+            maxNativeZoom: 16, maxZoom: 19, attribution: '© Esri'
+        }).addTo(map);
+
+        const osmb = new OSMBuildings(map).date(new Date());
+
+        let routingControl = L.Routing.control({
+            waypoints: [], routeWhileDragging: true,
+            lineOptions: { styles: [{color: '#3b82f6', opacity: 0.9, weight: 5}] }
+        }).addTo(map);
+
+        let activeBlinkMarker = null;
+        let blinkIcon = L.divIcon({ className: 'blinking-pointer', iconSize: [20, 20], iconAnchor: [10, 10] });
+
+        routingControl.on('routeselected', function(e) {
+            let route = e.route;
+            setTimeout(() => {
+                let rows = document.querySelectorAll('.leaflet-routing-alt table tbody tr');
+                rows.forEach((row, index) => {
+                    row.style.cursor = 'pointer';
+                    row.addEventListener('click', () => {
+                        if (activeBlinkMarker) map.removeLayer(activeBlinkMarker);
+                        let coord = route.coordinates[route.instructions[index].index];
+                        activeBlinkMarker = L.marker([coord.lat, coord.lng], {icon: blinkIcon}).addTo(map);
+                        setTimeout(() => { if (activeBlinkMarker) map.removeLayer(activeBlinkMarker); }, 4000);
+                    });
+                });
+            }, 300);
+        });
+
+        // Enriched HTML formatting for different building types
+        function getBuildingUI(name, data) {
+            if (!data) return `<h4 style="margin:0 0 5px 0; color:#0f172a; font-size:15px;">${name}</h4><p style="font-size:11px; color:#64748b; margin:0;">Standard Campus Facility</p>`;
+            
+            if (data.type === "academic") {
+                return `
+                    <h4 style="margin: 0 0 5px 0; color: #0f172a; font-size: 15px;">${name}</h4>
+                    <p style="margin: 0 0 10px 0; font-size: 12px; color: #1d4ed8; font-weight: bold;">${data.dept}</p>
+                    <div style="background: rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.05); padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                        <p style="margin: 0 0 4px 0; font-size: 11px; color: #334155;"><b>👨‍🎓 Students:</b> ${data.students} &nbsp;|&nbsp; <b>👨‍🏫 Faculty:</b> ${data.faculty}</p>
+                        <p style="margin: 4px 0; font-size: 11px; color: #334155;"><b>👤 HOD:</b> ${data.hod}</p>
+                        <p style="margin: 6px 0 0 0; font-size: 11px; color: #334155;"><b>🔬 Key Labs:</b><br/>${data.labs.join(', ')}</p>
+                    </div>
+                `;
+            } else if (data.type === "hostel") {
+                return `
+                    <h4 style="margin: 0 0 5px 0; color: #0f172a; font-size: 15px;">${name}</h4>
+                    <p style="margin: 0 0 10px 0; font-size: 12px; color: #d97706; font-weight: bold;">Campus Residence</p>
+                    <div style="background: rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.05); padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                        <p style="margin: 0 0 6px 0; font-size: 11px; color: #334155; line-height: 1.4;">${data.desc}</p>
+                        <p style="margin: 0; font-size: 11px; color: #10b981;"><b>🕒 Access:</b> ${data.hours}</p>
+                    </div>
+                `;
+            } else {
+                return `
+                    <h4 style="margin: 0 0 5px 0; color: #0f172a; font-size: 15px;">${name}</h4>
+                    <p style="margin: 0 0 10px 0; font-size: 12px; color: #10b981; font-weight: bold;">🕒 Hours: ${data.hours}</p>
+                    <div style="background: rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.05); padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                        <p style="margin: 0; font-size: 11px; color: #334155; line-height: 1.4;">${data.desc}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function closeDetails() {
+            document.getElementById('building-details-panel').style.display = 'none';
+        }
+
+        // Fuzzy matcher expanded to catch the new facilities
+        function matchData(osmName) {
+            if (!osmName) return null;
+            const name = osmName.toLowerCase();
+            
+            for (const [key, value] of Object.entries(kleData)) {
+                if (name.includes(key.toLowerCase()) || key.toLowerCase().includes(name)) return value;
+            }
+            
+            if (name.includes("c-lite") || name.includes("biotech")) return kleData["C-LITE"];
+            if (name.includes("robotics") || name.includes("mech")) return kleData["School of Mechanical Engineering"];
+            if (name.includes("civil")) return kleData["School of Civil Engineering"];
+            if (name.includes("canteen")) return kleData["KLE Tech Canteen"];
+            if (name.includes("main building")) return kleData["Main Building"];
+            if (name.includes("library")) return kleData["Central Library"];
+            if (name.includes("admin")) return kleData["Admin Block"];
+            if (name.includes("boys hostel") || name.includes("leva junior")) return kleData["BVB Junior Boys Hostel"];
+            if (name.includes("girls hostel")) return kleData["KLE Girls Hostel"];
+            if (name.includes("arena") || name.includes("indoor")) return kleData["Indoor Sports Arena"];
+            if (name.includes("architecture")) return kleData["School of Architecture"];
+            
+            return null;
+        }
+
+        fetch('http://127.0.0.1:5000/api/map')
+            .then(response => response.json())
+            .then(data => {
+                let namedLocations = [];
+                let buildings3D = { type: "FeatureCollection", features: [] };
+
+                L.geoJSON(data, {
+                    style: function (feature) {
+                        if (feature.properties.highway) return { color: '#f59e0b', weight: 2, opacity: 0.8 }; 
+                        if (feature.properties.building) return { color: 'transparent', fillColor: 'transparent' };
+                    },
+                    onEachFeature: function (feature, layer) {
+                        if (feature.properties.building) {
+                            
+                            const realData = matchData(feature.properties.name);
+                            
+                            feature.properties.height = realData ? realData.height : 10; 
+                            feature.properties.color = '#cbd5e1'; 
+                            feature.properties.roofColor = '#94a3b8'; 
+                            
+                            buildings3D.features.push(feature);
+
+                            if (feature.properties.name) {
+                                layer.bindTooltip(feature.properties.name, {
+                                    permanent: true, direction: "center", className: "map-label"
+                                });
+
+                                layer.on('click', function() {
+                                    document.getElementById('building-details-panel').style.display = 'block';
+                                    document.getElementById('building-details-content').innerHTML = getBuildingUI(feature.properties.name, realData);
+                                });
+                                
+                                let latlng = layer.getBounds ? layer.getBounds().getCenter() : layer.getLatLng();
+                                if (latlng) namedLocations.push({ name: feature.properties.name, lat: latlng.lat, lng: latlng.lng });
+                            }
+                        }
+                    }
+                }).addTo(map);
+
+                osmb.set(buildings3D);
+
+                namedLocations.sort((a, b) => a.name.localeCompare(b.name));
+                const sourceSelect = document.getElementById('sourceSelect');
+                const destSelect = document.getElementById('destSelect');
+
+                namedLocations.forEach(loc => {
+                    if (!Array.from(sourceSelect.options).some(opt => opt.text === loc.name)) {
+                        sourceSelect.add(new Option(loc.name, `${loc.lat},${loc.lng}`));
+                        destSelect.add(new Option(loc.name, `${loc.lat},${loc.lng}`));
+                    }
+                });
+            })
+            .catch(err => console.error("Error loading map API:", err));
+
+        function calculateRoute() {
+            var sourceVal = document.getElementById('sourceSelect').value;
+            var destVal = document.getElementById('destSelect').value;
+            if (!sourceVal || !destVal) { alert("Please select both a source and a destination."); return; }
+            var sourceCoords = sourceVal.split(',');
+            var destCoords = destVal.split(',');
+            routingControl.setWaypoints([
+                L.latLng(parseFloat(sourceCoords[0]), parseFloat(sourceCoords[1])),
+                L.latLng(parseFloat(destCoords[0]), parseFloat(destCoords[1]))
+            ]);
+        }
+    </script>
+</body>
+</html>
